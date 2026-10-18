@@ -10,17 +10,32 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+
     - name: Configurar Java 17
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
         java-version: '17'
-    - name: Dar permissao ao Gradle
-      run: chmod +x gradlew || true
-    - name: Compilar o Mod
-      run: gradle build --no-daemon || true
+
+    - name: Descarregar Forge MDK
+      run: |
+        curl -L -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-mdk.zip
+        unzip mdk.zip -d forge_project
+        rm mdk.zip
+
+    - name: Inserir Código Java
+      run: |
+        mkdir -p forge_project/src/main/java/com/noletodocs/bookoverlay/
+        cp src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java forge_project/src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java
+
+    - name: Compilar com Gradle
+      working-directory: forge_project
+      run: |
+        chmod +x gradlew
+        ./gradlew build --no-daemon
+
     - name: Guardar Ficheiro (.jar)
       uses: actions/upload-artifact@v3
       with:
         name: Mod-Compilado
-        path: build/libs/*.jar
+        path: forge_project/build/libs/*.jar
