@@ -1,4 +1,4 @@
-name: Compilar Mod Minecraft
+name: Compilar Mod Minecraft 1.19.2
 
 on:
   push:
@@ -20,21 +20,22 @@ jobs:
     - name: Instalar Ferramentas
       run: sudo apt-get update && sudo apt-get install -y unzip
 
-    - name: Descarregar Forge MDK
+    - name: Descarregar Forge MDK 1.19.2
       run: |
-        curl -L -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-mdk.zip
+        curl -L -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.2-43.3.0/forge-1.19.2-43.3.0-mdk.zip
         unzip mdk.zip -d forge_project
         rm mdk.zip
 
     - name: Inserir Código Java e Configuração
       run: |
+        rm -rf forge_project/src/main/java/*
         mkdir -p forge_project/src/main/java/com/noletodocs/bookoverlay/
         cp src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java forge_project/src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java
         
         mkdir -p forge_project/src/main/resources/META-INF/
         cat << 'EOF' > forge_project/src/main/resources/META-INF/mods.toml
         modLoader="javafml"
-        loaderVersion="[47,)"
+        loaderVersion="[43,)"
         license="All Rights Reserved"
         [[mods]]
         modId="examplemod"
@@ -46,7 +47,7 @@ jobs:
         [[dependencies.examplemod]]
             modId="minecraft"
             mandatory=true
-            versionRange="[1.20.1]"
+            versionRange="[1.19.2,1.20.2)"
             ordering="NONE"
             side="CLIENT"
         EOF
@@ -60,5 +61,5 @@ jobs:
     - name: Guardar Ficheiro (.jar)
       uses: actions/upload-artifact@v4
       with:
-        name: Mod-Compilado
+        name: Mod-Compilado-1.19.2
         path: forge_project/build/libs/*.jar
