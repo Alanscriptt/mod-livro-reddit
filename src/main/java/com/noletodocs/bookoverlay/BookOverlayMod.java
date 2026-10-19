@@ -3,7 +3,9 @@ package com.noletodocs.bookoverlay;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Axis;
+import com.mojang.math.Matrix3f;
+import com.mojang.math.Matrix4f;
+import com.mojang.math.Vector3f;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -29,8 +31,6 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLEnvironment;
-import org.joml.Matrix3f;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -63,11 +63,10 @@ public class BookOverlayMod {
         }
     }
 
-    // Cria uma textura lisa 1x1 para que a página tenha cor 100% uniforme sem quadradinhos!
     private ResourceLocation getSolidPageTexture() {
         if (solidPageTexture == null) {
             NativeImage img = new NativeImage(1, 1, false);
-            img.setPixelRGBA(0, 0, 0xFFFFFFFF); // Branco puro (a cor exata #d5cba6 é aplicada nos vértices)
+            img.setPixelRGBA(0, 0, 0xFFFFFFFF);
             DynamicTexture dyn = new DynamicTexture(img);
             solidPageTexture = Minecraft.getInstance().getTextureManager().register("solid_book_page", dyn);
         }
@@ -86,7 +85,7 @@ public class BookOverlayMod {
             if (file.exists()) {
                 textoCompleto = Files.readString(file.toPath(), StandardCharsets.UTF_8);
             } else {
-                textoCompleto = "Crie o arquivo historia.txt na pasta .minecraft!\n\nUse as SETAS ou os BOTOES LATERAIS DO MOUSE para virar as páginas.";
+                textoCompleto = "Crie o arquivo historia.txt na pasta do modpack!\n\nUse as SETAS ou os BOTOES LATERAIS DO MOUSE para virar as páginas.";
             }
 
             if (textoCompleto.trim().isEmpty()) {
@@ -179,7 +178,6 @@ public class BookOverlayMod {
         }
     }
 
-    // Suporte aos Botões Laterais do Mouse (Botão 5 = Avançar, Botão 4 = Voltar)
     @SubscribeEvent
     public void onMouseInput(InputEvent.MouseButton.Pre event) {
         Minecraft mc = Minecraft.getInstance();
@@ -225,9 +223,9 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        // Estabilizador 100%: Ignora o balanço de caminhada (View Bobbing) no livro
-        poseStack.last().pose().identity();
-        poseStack.last().normal().identity();
+        // Estabilizador 100% na 1.19.2: Reseta a matriz para ignorar o balanço de caminhada (View Bobbing)
+        poseStack.last().pose().setIdentity();
+        poseStack.last().normal().setIdentity();
 
         boolean isRightHand = (event.getHand() == InteractionHand.MAIN_HAND)
                 ? (mc.options.mainHand().get() == HumanoidArm.RIGHT)
@@ -236,9 +234,9 @@ public class BookOverlayMod {
 
         poseStack.translate(side * 0.31F, -0.14F, -0.58F);
 
-        poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
-        poseStack.mulPose(Axis.XP.rotationDegrees(-14.0F));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(side * 8.0F));
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(side * -18.0F));
+        poseStack.mulPose(Vector3f.XP.rotationDegrees(-14.0F));
+        poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * 8.0F));
 
         // 1) Desenha a Mão/Braço 3D segurando o livro por trás/baixo da capa
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
@@ -251,14 +249,12 @@ public class BookOverlayMod {
 
         // --- LADO ESQUERDO DO LIVRO ---
         poseStack.pushPose();
-        poseStack.mulPose(Axis.YP.rotationDegrees(13.0F));
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(13.0F));
 
-        // Capa esquerda (Textura original do livro)
         VertexConsumer bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Página esquerda LISA na cor #d5cba6 (RGB: 213, 203, 166)
         VertexConsumer pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
         desenharPaginaLisa3D(poseStack, pageConsumer, -0.238F, -0.168F, -0.008F, -0.004F, 0.168F, 0.018F, 213, 203, 166, light);
         buffer.endBatch(RenderType.entitySolid(pageTex));
@@ -274,14 +270,12 @@ public class BookOverlayMod {
 
         // --- LADO DIREITO DO LIVRO ---
         poseStack.pushPose();
-        poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F));
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(-13.0F));
 
-        // Capa direita (Textura original do livro)
         bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Página direita LISA na cor #d5cba6 (RGB: 213, 203, 166)
         pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
         desenharPaginaLisa3D(poseStack, pageConsumer, 0.004F, -0.168F, -0.008F, 0.238F, 0.168F, 0.018F, 213, 203, 166, light);
         buffer.endBatch(RenderType.entitySolid(pageTex));
@@ -295,7 +289,7 @@ public class BookOverlayMod {
         }
         poseStack.popPose();
 
-        // --- FOLHA ANIMADA VIRANDO (Também lisa na cor #d5cba6!) ---
+        // --- FOLHA ANIMADA VIRANDO ---
         if (direcaoVirada != 0) {
             float prog = Mth.lerp(partialTick, animProgressoAnt, animProgresso);
             float anguloFolha = (direcaoVirada == 1)
@@ -304,7 +298,7 @@ public class BookOverlayMod {
 
             poseStack.pushPose();
             poseStack.translate(0.0F, 0.0F, 0.020F);
-            poseStack.mulPose(Axis.YP.rotationDegrees(anguloFolha));
+            poseStack.mulPose(Vector3f.YP.rotationDegrees(anguloFolha));
             pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
             desenharPaginaLisa3D(poseStack, pageConsumer, 0.002F, -0.166F, -0.002F, 0.234F, 0.166F, 0.002F, 213, 203, 166, light);
             buffer.endBatch(RenderType.entitySolid(pageTex));
@@ -321,8 +315,8 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
         poseStack.translate(side * -0.03F, -0.24F, -0.045F);
-        poseStack.mulPose(Axis.ZP.rotationDegrees(side * -14.0F));
-        poseStack.mulPose(Axis.XP.rotationDegrees(16.0F));
+        poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * -14.0F));
+        poseStack.mulPose(Vector3f.XP.rotationDegrees(16.0F));
 
         desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, 255, 255, 255, light);
         desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, 255, 255, 255, light);
@@ -338,29 +332,26 @@ public class BookOverlayMod {
 
         float y = inicioY;
         for (FormattedCharSequence linha : linhas) {
-            font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
-            font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+            font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, false, 0, light);
+            font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, false, 0, light);
             y += espacoLinha;
         }
 
         String rodape = "- " + numPagina + " -";
         float rodapeX = -font.width(rodape) / 2.0F;
-        font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+        font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, false, 0, light);
     }
 
-    // Desenha a página com a frente 100% lisa (#d5cba6) e as bordas laterais levemente sombreadas para dar volume 3D
     private void desenharPaginaLisa3D(PoseStack poseStack, VertexConsumer consumer,
                                       float x1, float y1, float z1, float x2, float y2, float z2,
                                       int r, int g, int b, int light) {
         Matrix4f pose = poseStack.last().pose();
         Matrix3f normal = poseStack.last().normal();
 
-        // Cor levemente mais escura apenas para a espessura lateral das folhas (efeito 3D)
         int rSide = (int) (r * 0.88F);
         int gSide = (int) (g * 0.88F);
         int bSide = (int) (b * 0.88F);
 
-        // Frente e Trás na cor exata #d5cba6 (213, 203, 166)
         verticeCor(consumer, pose, normal, x1, y1, z2, 0, 1, 0, 0, 1, r, g, b, light);
         verticeCor(consumer, pose, normal, x2, y1, z2, 1, 1, 0, 0, 1, r, g, b, light);
         verticeCor(consumer, pose, normal, x2, y2, z2, 1, 0, 0, 0, 1, r, g, b, light);
@@ -371,7 +362,6 @@ public class BookOverlayMod {
         verticeCor(consumer, pose, normal, x1, y2, z1, 1, 0, 0, 0, -1, r, g, b, light);
         verticeCor(consumer, pose, normal, x2, y2, z1, 0, 0, 0, 0, -1, r, g, b, light);
 
-        // Bordas do bloco de folhas (Topo, Base, Esquerda, Direita)
         verticeCor(consumer, pose, normal, x1, y2, z2, 0, 1, 0, 1, 0, rSide, gSide, bSide, light);
         verticeCor(consumer, pose, normal, x2, y2, z2, 1, 1, 0, 1, 0, rSide, gSide, bSide, light);
         verticeCor(consumer, pose, normal, x2, y2, z1, 1, 0, 0, 1, 0, rSide, gSide, bSide, light);
