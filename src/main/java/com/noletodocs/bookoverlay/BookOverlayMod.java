@@ -1,5 +1,6 @@
 package com.noletodocs.bookoverlay;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
@@ -9,6 +10,7 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -41,6 +43,7 @@ import java.util.List;
 public class BookOverlayMod {
 
     private static final ResourceLocation BOOK_TEXTURE = new ResourceLocation("textures/entity/enchanting_table_book.png");
+    private ResourceLocation solidPageTexture;
 
     private final List<List<FormattedCharSequence>> paginas = new ArrayList<>();
     private int spreadAtual = 0;
@@ -52,13 +55,23 @@ public class BookOverlayMod {
     private float animProgressoAnt = 0.0F;
     private int direcaoVirada = 0; // 1 = avançando (dir -> esq), -1 = voltando (esq -> dir)
 
-    // Largura ajustada para permitir letras maiores e mais legíveis
     private static final int LARGURA_TEXTO = 88;
 
     public BookOverlayMod() {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             MinecraftForge.EVENT_BUS.register(this);
         }
+    }
+
+    // Cria uma textura lisa 1x1 para que a página tenha cor 100% uniforme sem quadradinhos!
+    private ResourceLocation getSolidPageTexture() {
+        if (solidPageTexture == null) {
+            NativeImage img = new NativeImage(1, 1, false);
+            img.setPixelRGBA(0, 0, 0xFFFFFFFF); // Branco puro (a cor exata #d5cba6 é aplicada nos vértices)
+            DynamicTexture dyn = new DynamicTexture(img);
+            solidPageTexture = Minecraft.getInstance().getTextureManager().register("solid_book_page", dyn);
+        }
+        return solidPageTexture;
     }
 
     private void carregarHistoria() {
@@ -73,7 +86,7 @@ public class BookOverlayMod {
             if (file.exists()) {
                 textoCompleto = Files.readString(file.toPath(), StandardCharsets.UTF_8);
             } else {
-                textoCompleto = "Crie o arquivo historia.txt na pasta .minecraft!\n\nUse as SETAS para virar as páginas e a tecla R para recarregar o texto.";
+                textoCompleto = "Crie o arquivo historia.txt na pasta .minecraft!\n\nUse as SETAS ou os BOTOES LATERAIS DO MOUSE para virar as páginas.";
             }
 
             if (textoCompleto.trim().isEmpty()) {
@@ -101,6 +114,26 @@ public class BookOverlayMod {
             historiaCarregada = true;
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void avancarPagina(Minecraft mc) {
+        if ((spreadAtual + 1) * 2 < paginas.size()) {
+            spreadAtual++;
+            direcaoVirada = 1;
+            animProgresso = 0.01F;
+            animProgressoAnt = 0.01F;
+            mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 1.0F);
+        }
+    }
+
+    private void voltarPagina(Minecraft mc) {
+        if (spreadAtual > 0) {
+            spreadAtual--;
+            direcaoVirada = -1;
+            animProgresso = 0.01F;
+            animProgressoAnt = 0.01F;
+            mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 0.9F);
         }
     }
 
@@ -135,25 +168,30 @@ public class BookOverlayMod {
                 livroAtivo = !livroAtivo;
                 if (livroAtivo) carregarHistoria();
             } else if (event.getKey() == GLFW.GLFW_KEY_RIGHT) {
-                if ((spreadAtual + 1) * 2 < paginas.size()) {
-                    spreadAtual++;
-                    direcaoVirada = 1;
-                    animProgresso = 0.01F;
-                    animProgressoAnt = 0.01F;
-                    mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 1.0F);
-                }
+                avancarPagina(mc);
             } else if (event.getKey() == GLFW.GLFW_KEY_LEFT) {
-                if (spreadAtual > 0) {
-                    spreadAtual--;
-                    direcaoVirada = -1;
-                    animProgresso = 0.01F;
-                    animProgressoAnt = 0.01F;
-                    mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 0.9F);
-                }
+                voltarPagina(mc);
             } else if (event.getKey() == GLFW.GLFW_KEY_R) {
                 carregarHistoria();
                 spreadAtual = 0;
                 mc.player.displayClientMessage(Component.literal("§a[Relatos] historia.txt recarregado!"), true);
+            }
+        }
+    }
+
+    // Suporte aos Botões Laterais do Mouse (Botão 5 = Avançar, Botão 4 = Voltar)
+    @SubscribeEvent
+    public void onMouseInput(InputEvent.MouseButton.Pre event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!livroAtivo || mc.player == null || mc.screen != null) return;
+
+        if (event.getAction() == GLFW.GLFW_PRESS) {
+            if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_5) {
+                avancarPagina(mc);
+                event.setCanceled(true);
+            } else if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_4) {
+                voltarPagina(mc);
+                event.setCanceled(true);
             }
         }
     }
@@ -187,8 +225,7 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        // TRAVA 100% O BALANÇO DE CAMINHADA (View Bobbing) E DE CÂMERA APENAS NO LIVRO!
-        // Ao resetar a matriz para a identidade, o livro ignora o chacoalhar dos passos do boneco.
+        // Estabilizador 100%: Ignora o balanço de caminhada (View Bobbing) no livro
         poseStack.last().pose().identity();
         poseStack.last().normal().identity();
 
@@ -197,35 +234,38 @@ public class BookOverlayMod {
                 : (mc.options.mainHand().get() == HumanoidArm.LEFT);
         float side = isRightHand ? 1.0F : -1.0F;
 
-        // Posiciona o livro um pouquinho mais perto da câmera (-0.58F) para dar mais nitidez às letras
         poseStack.translate(side * 0.31F, -0.14F, -0.58F);
 
-        // Mantém o ângulo de leitura aprovado
         poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(-14.0F));
         poseStack.mulPose(Axis.ZP.rotationDegrees(side * 8.0F));
 
-        // 1) Desenha a Mão/Braço 3D segurando o livro POR TRÁS/BAIXO da capa
+        // 1) Desenha a Mão/Braço 3D segurando o livro por trás/baixo da capa
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
 
-        // 2) Desenha o Livro 3D + Texto com Alto Contraste
+        // 2) Desenha o Livro 3D (Capa original + Páginas Lisas #d5cba6 + Texto)
         Font font = mc.font;
         int pagEsqIndex = spreadAtual * 2;
         int pagDirIndex = spreadAtual * 2 + 1;
+        ResourceLocation pageTex = getSolidPageTexture();
 
         // --- LADO ESQUERDO DO LIVRO ---
         poseStack.pushPose();
         poseStack.mulPose(Axis.YP.rotationDegrees(13.0F));
 
+        // Capa esquerda (Textura original do livro)
         VertexConsumer bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
-        desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        desenharCaixa3D(poseStack, bookConsumer, -0.238F, -0.168F, -0.008F, -0.004F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
+        desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
+
+        // Página esquerda LISA na cor #d5cba6 (RGB: 213, 203, 166)
+        VertexConsumer pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
+        desenharPaginaLisa3D(poseStack, pageConsumer, -0.238F, -0.168F, -0.008F, -0.004F, 0.168F, 0.018F, 213, 203, 166, light);
+        buffer.endBatch(RenderType.entitySolid(pageTex));
 
         if (pagEsqIndex < paginas.size()) {
             poseStack.pushPose();
             poseStack.translate(-0.121F, 0.0F, 0.0195F);
-            // Escala levemente maior (0.00215F) para aumentar a legibilidade
             poseStack.scale(0.00215F, -0.00215F, 0.00215F);
             desenharLinhasComDestaque(font, paginas.get(pagEsqIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
             poseStack.popPose();
@@ -236,10 +276,15 @@ public class BookOverlayMod {
         poseStack.pushPose();
         poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F));
 
+        // Capa direita (Textura original do livro)
         bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
-        desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        desenharCaixa3D(poseStack, bookConsumer, 0.004F, -0.168F, -0.008F, 0.238F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
+        desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
+
+        // Página direita LISA na cor #d5cba6 (RGB: 213, 203, 166)
+        pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
+        desenharPaginaLisa3D(poseStack, pageConsumer, 0.004F, -0.168F, -0.008F, 0.238F, 0.168F, 0.018F, 213, 203, 166, light);
+        buffer.endBatch(RenderType.entitySolid(pageTex));
 
         if (pagDirIndex < paginas.size()) {
             poseStack.pushPose();
@@ -250,7 +295,7 @@ public class BookOverlayMod {
         }
         poseStack.popPose();
 
-        // --- FOLHA ANIMADA VIRANDO ---
+        // --- FOLHA ANIMADA VIRANDO (Também lisa na cor #d5cba6!) ---
         if (direcaoVirada != 0) {
             float prog = Mth.lerp(partialTick, animProgressoAnt, animProgresso);
             float anguloFolha = (direcaoVirada == 1)
@@ -260,9 +305,9 @@ public class BookOverlayMod {
             poseStack.pushPose();
             poseStack.translate(0.0F, 0.0F, 0.020F);
             poseStack.mulPose(Axis.YP.rotationDegrees(anguloFolha));
-            bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
-            desenharCaixa3D(poseStack, bookConsumer, 0.002F, -0.166F, -0.002F, 0.234F, 0.166F, 0.002F, 12, 10, 24, 19, 64, 32, light);
-            buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
+            pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
+            desenharPaginaLisa3D(poseStack, pageConsumer, 0.002F, -0.166F, -0.002F, 0.234F, 0.166F, 0.002F, 213, 203, 166, light);
+            buffer.endBatch(RenderType.entitySolid(pageTex));
             poseStack.popPose();
         }
 
@@ -279,14 +324,13 @@ public class BookOverlayMod {
         poseStack.mulPose(Axis.ZP.rotationDegrees(side * -14.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(16.0F));
 
-        desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, light);
-        desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, light);
+        desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, 255, 255, 255, light);
+        desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, 255, 255, 255, light);
 
         poseStack.popPose();
         buffer.endBatch(RenderType.entityTranslucent(skin));
     }
 
-    // Desenha as letras com efeito de Tinta Forte (Semi-Negrito + Contorno de Contraste) para leitura fácil!
     private void desenharLinhasComDestaque(Font font, List<FormattedCharSequence> linhas, Matrix4f matrix, MultiBufferSource buffer, int light, int numPagina) {
         int espacoLinha = 10;
         float inicioY = -53.0F;
@@ -294,9 +338,7 @@ public class BookOverlayMod {
 
         float y = inicioY;
         for (FormattedCharSequence linha : linhas) {
-            // 1ª Camada: Leve reforço lateral (deixa a letra mais encorpada/negrito suave para não ficar fina em 3D)
             font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
-            // 2ª Camada: Preto puro nítido por cima para contraste máximo sobre o papel creme
             font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
             y += espacoLinha;
         }
@@ -306,9 +348,55 @@ public class BookOverlayMod {
         font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
     }
 
+    // Desenha a página com a frente 100% lisa (#d5cba6) e as bordas laterais levemente sombreadas para dar volume 3D
+    private void desenharPaginaLisa3D(PoseStack poseStack, VertexConsumer consumer,
+                                      float x1, float y1, float z1, float x2, float y2, float z2,
+                                      int r, int g, int b, int light) {
+        Matrix4f pose = poseStack.last().pose();
+        Matrix3f normal = poseStack.last().normal();
+
+        // Cor levemente mais escura apenas para a espessura lateral das folhas (efeito 3D)
+        int rSide = (int) (r * 0.88F);
+        int gSide = (int) (g * 0.88F);
+        int bSide = (int) (b * 0.88F);
+
+        // Frente e Trás na cor exata #d5cba6 (213, 203, 166)
+        verticeCor(consumer, pose, normal, x1, y1, z2, 0, 1, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y1, z2, 1, 1, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, 1, 0, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z2, 0, 0, 0, 0, 1, r, g, b, light);
+
+        verticeCor(consumer, pose, normal, x2, y1, z1, 0, 1, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y1, z1, 1, 1, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, 1, 0, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, 0, 0, 0, 0, -1, r, g, b, light);
+
+        // Bordas do bloco de folhas (Topo, Base, Esquerda, Direita)
+        verticeCor(consumer, pose, normal, x1, y2, z2, 0, 1, 0, 1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, 1, 1, 0, 1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, 1, 0, 0, 1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, 0, 0, 0, 1, 0, rSide, gSide, bSide, light);
+
+        verticeCor(consumer, pose, normal, x1, y1, z1, 0, 1, 0, -1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y1, z1, 1, 1, 0, -1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y1, z2, 1, 0, 0, -1, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x1, y1, z2, 0, 0, 0, -1, 0, rSide, gSide, bSide, light);
+
+        verticeCor(consumer, pose, normal, x1, y1, z1, 0, 1, -1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x1, y1, z2, 1, 1, -1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x1, y2, z2, 1, 0, -1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, 0, 0, -1, 0, 0, rSide, gSide, bSide, light);
+
+        verticeCor(consumer, pose, normal, x2, y1, z2, 0, 1, 1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y1, z1, 1, 1, 1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, 1, 0, 1, 0, 0, rSide, gSide, bSide, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, 0, 0, 1, 0, 0, rSide, gSide, bSide, light);
+    }
+
     private void desenharCaixa3D(PoseStack poseStack, VertexConsumer consumer,
                                  float x1, float y1, float z1, float x2, float y2, float z2,
-                                 int u1, int v1, int u2, int v2, float texW, float texH, int light) {
+                                 int u1, int v1, int u2, int v2, float texW, float texH,
+                                 int r, int g, int b, int light) {
         Matrix4f pose = poseStack.last().pose();
         Matrix3f normal = poseStack.last().normal();
 
@@ -317,48 +405,42 @@ public class BookOverlayMod {
         float minV = v1 / texH;
         float maxV = v2 / texH;
 
-        // Frente (Z = z2)
-        vertice(consumer, pose, normal, x1, y1, z2, minU, maxV, 0, 0, 1, light);
-        vertice(consumer, pose, normal, x2, y1, z2, maxU, maxV, 0, 0, 1, light);
-        vertice(consumer, pose, normal, x2, y2, z2, maxU, minV, 0, 0, 1, light);
-        vertice(consumer, pose, normal, x1, y2, z2, minU, minV, 0, 0, 1, light);
+        verticeCor(consumer, pose, normal, x1, y1, z2, minU, maxV, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y1, z2, maxU, maxV, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, maxU, minV, 0, 0, 1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z2, minU, minV, 0, 0, 1, r, g, b, light);
 
-        // Trás (Z = z1)
-        vertice(consumer, pose, normal, x2, y1, z1, minU, maxV, 0, 0, -1, light);
-        vertice(consumer, pose, normal, x1, y1, z1, maxU, maxV, 0, 0, -1, light);
-        vertice(consumer, pose, normal, x1, y2, z1, maxU, minV, 0, 0, -1, light);
-        vertice(consumer, pose, normal, x2, y2, z1, minU, minV, 0, 0, -1, light);
+        verticeCor(consumer, pose, normal, x2, y1, z1, minU, maxV, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y1, z1, maxU, maxV, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, maxU, minV, 0, 0, -1, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, minU, minV, 0, 0, -1, r, g, b, light);
 
-        // Topo (Y = y2)
-        vertice(consumer, pose, normal, x1, y2, z2, minU, maxV, 0, 1, 0, light);
-        vertice(consumer, pose, normal, x2, y2, z2, maxU, maxV, 0, 1, 0, light);
-        vertice(consumer, pose, normal, x2, y2, z1, maxU, minV, 0, 1, 0, light);
-        vertice(consumer, pose, normal, x1, y2, z1, minU, minV, 0, 1, 0, light);
+        verticeCor(consumer, pose, normal, x1, y2, z2, minU, maxV, 0, 1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, maxU, maxV, 0, 1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, maxU, minV, 0, 1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, minU, minV, 0, 1, 0, r, g, b, light);
 
-        // Base (Y = y1)
-        vertice(consumer, pose, normal, x1, y1, z1, minU, maxV, 0, -1, 0, light);
-        vertice(consumer, pose, normal, x2, y1, z1, maxU, maxV, 0, -1, 0, light);
-        vertice(consumer, pose, normal, x2, y1, z2, maxU, minV, 0, -1, 0, light);
-        vertice(consumer, pose, normal, x1, y1, z2, minU, minV, 0, -1, 0, light);
+        verticeCor(consumer, pose, normal, x1, y1, z1, minU, maxV, 0, -1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y1, z1, maxU, maxV, 0, -1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y1, z2, maxU, minV, 0, -1, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y1, z2, minU, minV, 0, -1, 0, r, g, b, light);
 
-        // Esquerda (X = x1)
-        vertice(consumer, pose, normal, x1, y1, z1, minU, maxV, -1, 0, 0, light);
-        vertice(consumer, pose, normal, x1, y1, z2, maxU, maxV, -1, 0, 0, light);
-        vertice(consumer, pose, normal, x1, y2, z2, maxU, minV, -1, 0, 0, light);
-        vertice(consumer, pose, normal, x1, y2, z1, minU, minV, -1, 0, 0, light);
+        verticeCor(consumer, pose, normal, x1, y1, z1, minU, maxV, -1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y1, z2, maxU, maxV, -1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z2, maxU, minV, -1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x1, y2, z1, minU, minV, -1, 0, 0, r, g, b, light);
 
-        // Direita (X = x2)
-        vertice(consumer, pose, normal, x2, y1, z2, minU, maxV, 1, 0, 0, light);
-        vertice(consumer, pose, normal, x2, y1, z1, maxU, maxV, 1, 0, 0, light);
-        vertice(consumer, pose, normal, x2, y2, z1, maxU, minV, 1, 0, 0, light);
-        vertice(consumer, pose, normal, x2, y2, z2, minU, minV, 1, 0, 0, light);
+        verticeCor(consumer, pose, normal, x2, y1, z2, minU, maxV, 1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y1, z1, maxU, maxV, 1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z1, maxU, minV, 1, 0, 0, r, g, b, light);
+        verticeCor(consumer, pose, normal, x2, y2, z2, minU, minV, 1, 0, 0, r, g, b, light);
     }
 
-    private void vertice(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-                         float x, float y, float z, float u, float v,
-                         float nx, float ny, float nz, int light) {
+    private void verticeCor(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
+                            float x, float y, float z, float u, float v,
+                            float nx, float ny, float nz, int r, int g, int b, int light) {
         consumer.vertex(pose, x, y, z)
-                .color(255, 255, 255, 255)
+                .color(r, g, b, 255)
                 .uv(u, v)
                 .overlayCoords(OverlayTexture.NO_OVERLAY)
                 .uv2(light)
