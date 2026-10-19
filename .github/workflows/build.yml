@@ -26,7 +26,7 @@ jobs:
         unzip mdk.zip -d forge_project
         rm mdk.zip
 
-    - name: Inserir Código Java e Configuração
+    - name: Inserir Código Java, Configuração e Modelos
       run: |
         mkdir -p forge_project/src/main/java/com/noletodocs/bookoverlay/
         cp src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java forge_project/src/main/java/com/noletodocs/bookoverlay/BookOverlayMod.java
@@ -42,13 +42,23 @@ jobs:
         displayName="Book Overlay Mod"
         displayURL="https://noletodocs.com"
         authors="Noleto Docs"
-        description='''Mod de overlay de texto para o canal.'''
+        description='''Mod de livro de historias.'''
         [[dependencies.examplemod]]
             modId="minecraft"
             mandatory=true
             versionRange="[1.20.1]"
             ordering="NONE"
             side="CLIENT"
+        EOF
+
+        mkdir -p forge_project/src/main/resources/assets/examplemod/models/item/
+        cat << 'EOF' > forge_project/src/main/resources/assets/examplemod/models/item/story_book.json
+        {
+          "parent": "item/generated",
+          "textures": {
+            "layer0": "minecraft:item/written_book"
+          }
+        }
         EOF
 
     - name: Compilar com Gradle
