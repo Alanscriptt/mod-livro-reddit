@@ -116,7 +116,7 @@ public class BookOverlayMod {
 
         animProgressoAnt = animProgresso;
         if (direcaoVirada != 0) {
-            animProgresso += 0.18F;
+            animProgresso += 0.16F; // Velocidade suave da folha virando
             if (animProgresso >= 1.0F) {
                 animProgresso = 0.0F;
                 animProgressoAnt = 0.0F;
@@ -137,7 +137,7 @@ public class BookOverlayMod {
             } else if (event.getKey() == GLFW.GLFW_KEY_RIGHT) {
                 if ((spreadAtual + 1) * 2 < paginas.size()) {
                     spreadAtual++;
-                    direcaoVirada = 1;
+                    direcaoVirada = 1; // Avança: folha sai da direita (-13°) e vira pela frente até a esquerda (-167°)
                     animProgresso = 0.01F;
                     animProgressoAnt = 0.01F;
                     mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 1.0F);
@@ -145,7 +145,7 @@ public class BookOverlayMod {
             } else if (event.getKey() == GLFW.GLFW_KEY_LEFT) {
                 if (spreadAtual > 0) {
                     spreadAtual--;
-                    direcaoVirada = -1;
+                    direcaoVirada = -1; // Volta: folha sai da esquerda (-167°) e vira pela frente até a direita (-13°)
                     animProgresso = 0.01F;
                     animProgressoAnt = 0.01F;
                     mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 0.9F);
@@ -192,18 +192,15 @@ public class BookOverlayMod {
                 : (mc.options.mainHand().get() == HumanoidArm.LEFT);
         float side = isRightHand ? 1.0F : -1.0F;
 
-        float bob = Mth.sin((mc.player.tickCount + partialTick) * 0.1F) * 0.006F;
+        // LIVRO 100% ESTÁTICO: Sem oscilação de respiração (bob removido) para leitura perfeita!
+        poseStack.translate(side * 0.34F, -0.15F - (event.getEquipProgress() * 0.2F), -0.64F);
 
-        // Posiciona o livro num ângulo confortável e um pouco mais alto para não bater nos corações
-        poseStack.translate(side * 0.34F, -0.15F + bob - (event.getEquipProgress() * 0.2F), -0.64F);
-
-        // ÂNGULO CORRIGIDO:
-        // XP negativo (-14.0F) inclina a parte de cima do livro para a FRENTE (não parece mais caindo para trás!)
+        // Ângulo perfeito que você aprovou
         poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(-14.0F));
         poseStack.mulPose(Axis.ZP.rotationDegrees(side * 8.0F));
 
-        // 1) Desenha a Mão/Braço 3D segurando firme a base do livro (estilo Cave Horror Project)
+        // 1) Desenha a Mão/Braço 3D segurando o livro POR TRÁS/BAIXO da capa (nunca tampa as letras!)
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
 
         // 2) Desenha o Livro 3D + Texto Centralizado na mesma peça
@@ -213,16 +210,16 @@ public class BookOverlayMod {
 
         // --- LADO ESQUERDO DO LIVRO ---
         poseStack.pushPose();
-        poseStack.mulPose(Axis.YP.rotationDegrees(13.0F)); // Curvatura suave da página esquerda
+        poseStack.mulPose(Axis.YP.rotationDegrees(13.0F));
 
         VertexConsumer bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         // Capa esquerda
         desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        // Bloco da página esquerda (Largura: 0.234F, Centro X = -0.121F | Altura: 0.336F, Centro Y = 0.0F)
+        // Bloco da página esquerda
         desenharCaixa3D(poseStack, bookConsumer, -0.238F, -0.168F, -0.008F, -0.004F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Texto da página esquerda (ancorado no centro exato da página esquerda: X = -0.121F, Y = 0.0F)
+        // Texto da página esquerda
         if (pagEsqIndex < paginas.size()) {
             poseStack.pushPose();
             poseStack.translate(-0.121F, 0.0F, 0.0195F);
@@ -234,16 +231,16 @@ public class BookOverlayMod {
 
         // --- LADO DIREITO DO LIVRO ---
         poseStack.pushPose();
-        poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F)); // Curvatura suave da página direita
+        poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F));
 
         bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         // Capa direita
         desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        // Bloco da página direita (Largura: 0.234F, Centro X = +0.121F | Altura: 0.336F, Centro Y = 0.0F)
+        // Bloco da página direita
         desenharCaixa3D(poseStack, bookConsumer, 0.004F, -0.168F, -0.008F, 0.238F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Texto da página direita (ancorado no centro exato da página direita: X = +0.121F, Y = 0.0F)
+        // Texto da página direita
         if (pagDirIndex < paginas.size()) {
             poseStack.pushPose();
             poseStack.translate(0.121F, 0.0F, 0.0195F);
@@ -253,12 +250,13 @@ public class BookOverlayMod {
         }
         poseStack.popPose();
 
-        // --- FOLHA ANIMADA VIRANDO ---
+        // --- FOLHA ANIMADA VIRANDO (Funciona tanto para Avançar quanto para Voltar pela FRENTE do livro!) ---
         if (direcaoVirada != 0) {
             float prog = Mth.lerp(partialTick, animProgressoAnt, animProgresso);
+            // -13° é a página direita aberta; -167° é a página esquerda aberta (passando por -90° que é de frente para o jogador!)
             float anguloFolha = (direcaoVirada == 1)
-                    ? Mth.lerp(prog, -13.0F, 167.0F)
-                    : Mth.lerp(prog, -167.0F, 13.0F);
+                    ? Mth.lerp(prog, -13.0F, -167.0F) // Avançando: vai da direita (-13°) para a esquerda (-167°) pela frente!
+                    : Mth.lerp(prog, -167.0F, -13.0F); // Voltando: vai da esquerda (-167°) para a direita (-13°) pela frente!
 
             poseStack.pushPose();
             poseStack.translate(0.0F, 0.0F, 0.020F);
@@ -273,32 +271,29 @@ public class BookOverlayMod {
         poseStack.popPose();
     }
 
-    // Desenha o braço 3D da própria skin do jogador segurando a base do livro (igual à 1ª imagem enviada!)
+    // Desenha o braço encaixado ATRÁS/ABAIXO da capa do livro, sem invadir a frente das páginas!
     private void renderizarBracoSegurandoLivro(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light, AbstractClientPlayer player, float side) {
         ResourceLocation skin = player.getSkinTextureLocation();
         VertexConsumer skinConsumer = buffer.getBuffer(RenderType.entityTranslucent(skin));
 
         poseStack.pushPose();
-        // Posiciona a mão segurando o meio/base do livro e descendo na direção do corpo do jogador
-        poseStack.translate(side * -0.02F, -0.18F, 0.035F);
-        poseStack.mulPose(Axis.ZP.rotationDegrees(side * -18.0F));
-        poseStack.mulPose(Axis.XP.rotationDegrees(22.0F));
+        // Z = -0.045F coloca a mão apoiando as costas/base da capa (atrás de Z = -0.022F), sem cobrir nenhuma palavra!
+        poseStack.translate(side * -0.03F, -0.24F, -0.045F);
+        poseStack.mulPose(Axis.ZP.rotationDegrees(side * -14.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(16.0F));
 
-        // Braço principal (UV do braço na skin 64x64: 44, 20 até 48, 32)
-        desenharCaixa3D(poseStack, skinConsumer, -0.055F, -0.26F, -0.055F, 0.055F, 0.09F, 0.055F, 44, 20, 48, 32, 64, 64, light);
-        // Manga/Camada externa da skin (UV da manga na skin 64x64: 44, 36 até 48, 48)
-        desenharCaixa3D(poseStack, skinConsumer, -0.060F, -0.26F, -0.060F, 0.060F, 0.095F, 0.060F, 44, 36, 48, 48, 64, 64, light);
+        // Braço principal (encaixa na base da capa em Y = 0.05F)
+        desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, light);
+        // Manga da skin
+        desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, light);
 
         poseStack.popPose();
         buffer.endBatch(RenderType.entityTranslucent(skin));
     }
 
-    // Centraliza o bloco de texto perfeitamente no meio da folha (Horizontal e Vertical)
     private void desenharLinhasCentralizadas(Font font, List<FormattedCharSequence> linhas, Matrix4f matrix, MultiBufferSource buffer, int light, int numPagina) {
         int espacoLinha = 10;
-        // Centraliza verticalmente considerando até 11 linhas por página
         float inicioY = -58.0F;
-        // Centraliza a margem esquerda da caixa de texto (metade de LARGURA_TEXTO = 46)
         float margemX = -LARGURA_TEXTO / 2.0F;
 
         float y = inicioY;
@@ -307,7 +302,6 @@ public class BookOverlayMod {
             y += espacoLinha;
         }
 
-        // Número da página centralizado no rodapé da folha
         String rodape = "- " + numPagina + " -";
         float rodapeX = -font.width(rodape) / 2.0F;
         font.drawInBatch(rodape, rodapeX, 60.0F, 0x6E5A47, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
