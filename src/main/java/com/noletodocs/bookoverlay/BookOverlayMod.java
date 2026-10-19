@@ -52,8 +52,8 @@ public class BookOverlayMod {
     private float animProgressoAnt = 0.0F;
     private int direcaoVirada = 0; // 1 = avançando (dir -> esq), -1 = voltando (esq -> dir)
 
-    // Largura máxima do texto dentro de cada página (em pixels da fonte)
-    private static final int LARGURA_TEXTO = 92;
+    // Largura ajustada para permitir letras maiores e mais legíveis
+    private static final int LARGURA_TEXTO = 88;
 
     public BookOverlayMod() {
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -90,7 +90,7 @@ public class BookOverlayMod {
                 }
             }
 
-            int linhasPorPagina = 11;
+            int linhasPorPagina = 10;
             for (int i = 0; i < todasLinhas.size(); i += linhasPorPagina) {
                 paginas.add(new ArrayList<>(todasLinhas.subList(i, Math.min(i + linhasPorPagina, todasLinhas.size()))));
             }
@@ -116,7 +116,7 @@ public class BookOverlayMod {
 
         animProgressoAnt = animProgresso;
         if (direcaoVirada != 0) {
-            animProgresso += 0.16F; // Velocidade suave da folha virando
+            animProgresso += 0.16F;
             if (animProgresso >= 1.0F) {
                 animProgresso = 0.0F;
                 animProgressoAnt = 0.0F;
@@ -137,7 +137,7 @@ public class BookOverlayMod {
             } else if (event.getKey() == GLFW.GLFW_KEY_RIGHT) {
                 if ((spreadAtual + 1) * 2 < paginas.size()) {
                     spreadAtual++;
-                    direcaoVirada = 1; // Avança: folha sai da direita (-13°) e vira pela frente até a esquerda (-167°)
+                    direcaoVirada = 1;
                     animProgresso = 0.01F;
                     animProgressoAnt = 0.01F;
                     mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 1.0F);
@@ -145,7 +145,7 @@ public class BookOverlayMod {
             } else if (event.getKey() == GLFW.GLFW_KEY_LEFT) {
                 if (spreadAtual > 0) {
                     spreadAtual--;
-                    direcaoVirada = -1; // Volta: folha sai da esquerda (-167°) e vira pela frente até a direita (-13°)
+                    direcaoVirada = -1;
                     animProgresso = 0.01F;
                     animProgressoAnt = 0.01F;
                     mc.player.playSound(SoundEvents.BOOK_PAGE_TURN, 1.0F, 0.9F);
@@ -187,23 +187,28 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
+        // TRAVA 100% O BALANÇO DE CAMINHADA (View Bobbing) E DE CÂMERA APENAS NO LIVRO!
+        // Ao resetar a matriz para a identidade, o livro ignora o chacoalhar dos passos do boneco.
+        poseStack.last().pose().identity();
+        poseStack.last().normal().identity();
+
         boolean isRightHand = (event.getHand() == InteractionHand.MAIN_HAND)
                 ? (mc.options.mainHand().get() == HumanoidArm.RIGHT)
                 : (mc.options.mainHand().get() == HumanoidArm.LEFT);
         float side = isRightHand ? 1.0F : -1.0F;
 
-        // LIVRO 100% ESTÁTICO: Sem oscilação de respiração (bob removido) para leitura perfeita!
-        poseStack.translate(side * 0.34F, -0.15F - (event.getEquipProgress() * 0.2F), -0.64F);
+        // Posiciona o livro um pouquinho mais perto da câmera (-0.58F) para dar mais nitidez às letras
+        poseStack.translate(side * 0.31F, -0.14F, -0.58F);
 
-        // Ângulo perfeito que você aprovou
+        // Mantém o ângulo de leitura aprovado
         poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(-14.0F));
         poseStack.mulPose(Axis.ZP.rotationDegrees(side * 8.0F));
 
-        // 1) Desenha a Mão/Braço 3D segurando o livro POR TRÁS/BAIXO da capa (nunca tampa as letras!)
+        // 1) Desenha a Mão/Braço 3D segurando o livro POR TRÁS/BAIXO da capa
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
 
-        // 2) Desenha o Livro 3D + Texto Centralizado na mesma peça
+        // 2) Desenha o Livro 3D + Texto com Alto Contraste
         Font font = mc.font;
         int pagEsqIndex = spreadAtual * 2;
         int pagDirIndex = spreadAtual * 2 + 1;
@@ -213,18 +218,16 @@ public class BookOverlayMod {
         poseStack.mulPose(Axis.YP.rotationDegrees(13.0F));
 
         VertexConsumer bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
-        // Capa esquerda
         desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        // Bloco da página esquerda
         desenharCaixa3D(poseStack, bookConsumer, -0.238F, -0.168F, -0.008F, -0.004F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Texto da página esquerda
         if (pagEsqIndex < paginas.size()) {
             poseStack.pushPose();
             poseStack.translate(-0.121F, 0.0F, 0.0195F);
-            poseStack.scale(0.0020F, -0.0020F, 0.0020F);
-            desenharLinhasCentralizadas(font, paginas.get(pagEsqIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
+            // Escala levemente maior (0.00215F) para aumentar a legibilidade
+            poseStack.scale(0.00215F, -0.00215F, 0.00215F);
+            desenharLinhasComDestaque(font, paginas.get(pagEsqIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
             poseStack.popPose();
         }
         poseStack.popPose();
@@ -234,29 +237,25 @@ public class BookOverlayMod {
         poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F));
 
         bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
-        // Capa direita
         desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, light);
-        // Bloco da página direita
         desenharCaixa3D(poseStack, bookConsumer, 0.004F, -0.168F, -0.008F, 0.238F, 0.168F, 0.018F, 12, 10, 24, 19, 64, 32, light);
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
 
-        // Texto da página direita
         if (pagDirIndex < paginas.size()) {
             poseStack.pushPose();
             poseStack.translate(0.121F, 0.0F, 0.0195F);
-            poseStack.scale(0.0020F, -0.0020F, 0.0020F);
-            desenharLinhasCentralizadas(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagDirIndex + 1);
+            poseStack.scale(0.00215F, -0.00215F, 0.00215F);
+            desenharLinhasComDestaque(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagDirIndex + 1);
             poseStack.popPose();
         }
         poseStack.popPose();
 
-        // --- FOLHA ANIMADA VIRANDO (Funciona tanto para Avançar quanto para Voltar pela FRENTE do livro!) ---
+        // --- FOLHA ANIMADA VIRANDO ---
         if (direcaoVirada != 0) {
             float prog = Mth.lerp(partialTick, animProgressoAnt, animProgresso);
-            // -13° é a página direita aberta; -167° é a página esquerda aberta (passando por -90° que é de frente para o jogador!)
             float anguloFolha = (direcaoVirada == 1)
-                    ? Mth.lerp(prog, -13.0F, -167.0F) // Avançando: vai da direita (-13°) para a esquerda (-167°) pela frente!
-                    : Mth.lerp(prog, -167.0F, -13.0F); // Voltando: vai da esquerda (-167°) para a direita (-13°) pela frente!
+                    ? Mth.lerp(prog, -13.0F, -167.0F)
+                    : Mth.lerp(prog, -167.0F, -13.0F);
 
             poseStack.pushPose();
             poseStack.translate(0.0F, 0.0F, 0.020F);
@@ -271,40 +270,40 @@ public class BookOverlayMod {
         poseStack.popPose();
     }
 
-    // Desenha o braço encaixado ATRÁS/ABAIXO da capa do livro, sem invadir a frente das páginas!
     private void renderizarBracoSegurandoLivro(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light, AbstractClientPlayer player, float side) {
         ResourceLocation skin = player.getSkinTextureLocation();
         VertexConsumer skinConsumer = buffer.getBuffer(RenderType.entityTranslucent(skin));
 
         poseStack.pushPose();
-        // Z = -0.045F coloca a mão apoiando as costas/base da capa (atrás de Z = -0.022F), sem cobrir nenhuma palavra!
         poseStack.translate(side * -0.03F, -0.24F, -0.045F);
         poseStack.mulPose(Axis.ZP.rotationDegrees(side * -14.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(16.0F));
 
-        // Braço principal (encaixa na base da capa em Y = 0.05F)
         desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, light);
-        // Manga da skin
         desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, light);
 
         poseStack.popPose();
         buffer.endBatch(RenderType.entityTranslucent(skin));
     }
 
-    private void desenharLinhasCentralizadas(Font font, List<FormattedCharSequence> linhas, Matrix4f matrix, MultiBufferSource buffer, int light, int numPagina) {
+    // Desenha as letras com efeito de Tinta Forte (Semi-Negrito + Contorno de Contraste) para leitura fácil!
+    private void desenharLinhasComDestaque(Font font, List<FormattedCharSequence> linhas, Matrix4f matrix, MultiBufferSource buffer, int light, int numPagina) {
         int espacoLinha = 10;
-        float inicioY = -58.0F;
+        float inicioY = -53.0F;
         float margemX = -LARGURA_TEXTO / 2.0F;
 
         float y = inicioY;
         for (FormattedCharSequence linha : linhas) {
-            font.drawInBatch(linha, margemX, y, 0x261C14, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+            // 1ª Camada: Leve reforço lateral (deixa a letra mais encorpada/negrito suave para não ficar fina em 3D)
+            font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+            // 2ª Camada: Preto puro nítido por cima para contraste máximo sobre o papel creme
+            font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
             y += espacoLinha;
         }
 
         String rodape = "- " + numPagina + " -";
         float rodapeX = -font.width(rodape) / 2.0F;
-        font.drawInBatch(rodape, rodapeX, 60.0F, 0x6E5A47, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+        font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
     }
 
     private void desenharCaixa3D(PoseStack poseStack, VertexConsumer consumer,
