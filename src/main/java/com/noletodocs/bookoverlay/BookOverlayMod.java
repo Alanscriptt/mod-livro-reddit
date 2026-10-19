@@ -9,6 +9,7 @@ import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -24,7 +25,9 @@ public class BookOverlayMod {
     private static boolean carregado = false;
 
     public BookOverlayMod() {
-        MinecraftForge.EVENT_BUS.register(this);
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            MinecraftForge.EVENT_BUS.register(this);
+        }
     }
 
     public static void carregarHistoria() {
@@ -69,10 +72,6 @@ public class BookOverlayMod {
         GuiGraphics guiGraphics = event.getGuiGraphics();
         Font font = mc.font;
 
-        int screenWidth = mc.getWindow().getGuiScaledWidth();
-        int screenHeight = mc.getWindow().getGuiScaledHeight();
-
-        // Posicionamento no canto superior esquerdo para nao cobrir o mini-mapa
         int x = 10;
         int y = 10;
 
