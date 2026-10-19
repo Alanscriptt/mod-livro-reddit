@@ -8,9 +8,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.BookModel;
 import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.player.PlayerRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -80,23 +83,25 @@ public class BookOverlayMod {
                 textoCompleto = "O arquivo historia.txt está vazio.";
             }
 
+            // Largura de 80 pixels para ficar com margens bonitas dentro da folha
             List<FormattedCharSequence> todasLinhas = new ArrayList<>();
             String[] paragrafos = textoCompleto.replace("\r", "").split("\n");
             for (String p : paragrafos) {
                 if (p.trim().isEmpty()) {
                     todasLinhas.add(FormattedCharSequence.EMPTY);
                 } else {
-                    todasLinhas.addAll(mc.font.split(Component.literal(p), 84));
+                    todasLinhas.addAll(mc.font.split(Component.literal(p), 80));
                 }
             }
 
-            int linhasPorPagina = 10;
+            // 11 linhas por página
+            int linhasPorPagina = 11;
             for (int i = 0; i < todasLinhas.size(); i += linhasPorPagina) {
                 paginas.add(new ArrayList<>(todasLinhas.subList(i, Math.min(i + linhasPorPagina, todasLinhas.size()))));
             }
 
             if (paginas.isEmpty()) {
-                paginas.add(mc.font.split(Component.literal("Sem texto."), 84));
+                paginas.add(mc.font.split(Component.literal("Sem texto."), 80));
             }
             historiaCarregada = true;
         } catch (Exception e) {
@@ -188,20 +193,25 @@ public class BookOverlayMod {
                 : (mc.options.mainHand().get() == HumanoidArm.LEFT);
         float side = isRightHand ? 1.0F : -1.0F;
 
-        // Posiciona o livro inteiro na tela, mais alto para mostrar a página toda
+        // Balanço suave da mão enquanto caminha
         float bob = Mth.sin((mc.player.tickCount + partialTick) * 0.1F) * 0.008F;
-        poseStack.translate(side * 0.33F, -0.16F + bob - (event.getEquipProgress() * 0.2F), -0.64F);
 
-        // Inclinação confortável de leitura em 1ª pessoa
-        poseStack.mulPose(Axis.YP.rotationDegrees(side * -14.0F));
-        poseStack.mulPose(Axis.XP.rotationDegrees(20.0F));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(side * 5.0F));
+        // Posiciona o conjunto (Braço + Livro) na tela
+        poseStack.translate(side * 0.35F, -0.22F + bob - (event.getEquipProgress() * 0.2F), -0.62F);
 
-        // 1) Desenha o Modelo 3D do Livro
+        // ÂNGULO CORRIGIDO: Livro em pé, virado de frente para o rosto do jogador (igual à 1ª imagem!)
+        poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(-8.0F)); // Negativo levanta o livro de frente para o olhar!
+        poseStack.mulPose(Axis.ZP.rotationDegrees(side * 12.0F));
+
+        // 1) Renderiza o braço 3D do jogador segurando o livro por baixo
+        renderizarBracoSegurando(poseStack, buffer, event.getPackedLight(), isRightHand, side);
+
+        // 2) Renderiza o Modelo 3D do Livro
         poseStack.pushPose();
         poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
         poseStack.mulPose(Axis.ZP.rotationDegrees(90.0F));
-        poseStack.scale(0.80F, 0.80F, 0.80F);
+        poseStack.scale(0.82F, 0.82F, 0.82F);
 
         float pageFlip = Mth.lerp(partialTick, this.oFlip, this.flip);
         float leftPageFlip = Mth.frac(pageFlip + 0.25F) * 1.6F - 0.3F;
@@ -210,33 +220,61 @@ public class BookOverlayMod {
 
         VertexConsumer vertexConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         bookModel.render(poseStack, vertexConsumer, light, OverlayTexture.NO_OVERLAY, 1.0F, 1.0F, 1.0F, 1.0F);
-        // Descarrega o desenho do livro na placa de vídeo ANTES de desenhar as letras
         buffer.endBatch(RenderType.entitySolid(BOOK_TEXTURE));
         poseStack.popPose();
 
-        // 2) Desenha as Letras por cima das páginas (sem nenhuma chance de serem cortadas pelo papel!)
-        renderizarTextoSobreposto(poseStack, buffer, light);
+        // 3) Renderiza o texto DENTRO do mesmo sistema de rotação do livro (cola 100% na inclinação da folha!)
+        renderizarTextoColadoNoPapel(poseStack, buffer, light);
 
         poseStack.popPose();
     }
 
-    private void renderizarTextoSobreposto(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light) {
+    private void renderizarBracoSegurando(PoseStack poseStack, MultiBufferSource buffer, int packedLight, boolean isRightHand, float side) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            AbstractClientPlayer player = mc.player;
+            if (player == null) return;
+
+            EntityRenderDispatcher dispatcher = mc.getEntityRenderDispatcher();
+            PlayerRenderer playerRenderer = (PlayerRenderer) dispatcher.getRenderer(player);
+
+            poseStack.pushPose();
+            // Posiciona o braço saindo de baixo e segurando o meio do livro (igual à imagem de referência)
+            poseStack.translate(side * 0.04F, -0.52F, 0.12F);
+            poseStack.mulPose(Axis.XP.rotationDegrees(-65.0F));
+            poseStack.mulPose(Axis.YP.rotationDegrees(side * 18.0F));
+            poseStack.mulPose(Axis.ZP.rotationDegrees(side * -12.0F));
+            poseStack.scale(0.85F, 0.85F, 0.85F);
+
+            if (isRightHand) {
+                playerRenderer.renderRightHand(poseStack, buffer, packedLight, player);
+            } else {
+                playerRenderer.renderLeftHand(poseStack, buffer, packedLight, player);
+            }
+            poseStack.popPose();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void renderizarTextoColadoNoPapel(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light) {
         if (paginas.isEmpty()) return;
         Font font = Minecraft.getInstance().font;
 
         int pagEsqIndex = spreadAtual * 2;
         int pagDirIndex = spreadAtual * 2 + 1;
 
-        // No BookModel (escala 0.80), o ângulo exato de cada página em relação à câmera é de 16.26 graus (inclinação em V).
-        // Além disso, usamos Font.DisplayMode.SEE_THROUGH para que o papel NUNCA tampe nenhuma letra!
+        // No BookModel com abertura 1.0F:
+        // A lombada interna das páginas fica em Z = 0.05125F (0.0625 * 0.82).
+        // Cada folha abre exatamente a 16.26 graus para trás a partir da lombada central.
+        // Fazendo a rotação a partir da lombada central, o texto deita exatamente no plano da folha!
 
         // --- PÁGINA ESQUERDA ---
         if (pagEsqIndex < paginas.size()) {
             poseStack.pushPose();
-            poseStack.translate(-0.015F, 0.175F, 0.055F);
-            poseStack.mulPose(Axis.YP.rotationDegrees(16.26F));
-            poseStack.translate(-0.215F, 0.0F, 0.0F);
-            poseStack.scale(0.00205F, -0.00205F, 0.00205F);
+            poseStack.translate(0.0F, 0.0F, 0.052F); // Vai até a lombada das páginas
+            poseStack.mulPose(Axis.YP.rotationDegrees(-16.26F)); // Deita no ângulo exato da página esquerda!
+            poseStack.translate(-0.205F, 0.165F, 0.002F); // Posiciona no topo esquerdo da folha
+            poseStack.scale(0.00195F, -0.00195F, 0.00195F);
 
             desenharLinhasDaPagina(font, paginas.get(pagEsqIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
             poseStack.popPose();
@@ -245,10 +283,10 @@ public class BookOverlayMod {
         // --- PÁGINA DIREITA ---
         if (pagDirIndex < paginas.size()) {
             poseStack.pushPose();
-            poseStack.translate(0.015F, 0.175F, 0.055F);
-            poseStack.mulPose(Axis.YP.rotationDegrees(-16.26F));
-            poseStack.translate(0.018F, 0.0F, 0.0F);
-            poseStack.scale(0.00205F, -0.00205F, 0.00205F);
+            poseStack.translate(0.0F, 0.0F, 0.052F); // Vai até a lombada das páginas
+            poseStack.mulPose(Axis.YP.rotationDegrees(16.26F)); // Deita no ângulo exato da página direita!
+            poseStack.translate(0.022F, 0.165F, 0.002F); // Posiciona no topo direito da folha
+            poseStack.scale(0.00195F, -0.00195F, 0.00195F);
 
             desenharLinhasDaPagina(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagDirIndex + 1);
             poseStack.popPose();
@@ -262,12 +300,11 @@ public class BookOverlayMod {
     private void desenharLinhasDaPagina(Font font, List<FormattedCharSequence> linhas, Matrix4f matrix, MultiBufferSource buffer, int light, int numPagina) {
         int y = 0;
         for (FormattedCharSequence linha : linhas) {
-            // SEE_THROUGH ignora o Depth Buffer do papel, garantindo que 100% da letra apareça sempre!
-            font.drawInBatch(linha, 0, y, 0x1E1610, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
-            y += 10;
+            font.drawInBatch(linha, 0, y, 0x2B2118, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
+            y += 9;
         }
         String rodape = "- " + numPagina + " -";
         int larguraRodape = font.width(rodape);
-        font.drawInBatch(rodape, (84 - larguraRodape) / 2.0F, 106, 0x5C4938, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
+        font.drawInBatch(rodape, (80 - larguraRodape) / 2.0F, 104, 0x6E5A47, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, light);
     }
 }
