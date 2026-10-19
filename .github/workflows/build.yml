@@ -12,7 +12,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Configurar Java 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
@@ -22,7 +22,7 @@ jobs:
 
     - name: Descarregar Forge MDK 1.19.2
       run: |
-        curl -L -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.2-43.3.0/forge-1.19.2-43.3.0-mdk.zip
+        curl -L -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.2-43.2.0/forge-1.19.2-43.2.0-mdk.zip
         unzip mdk.zip -d forge_project
         rm mdk.zip
 
