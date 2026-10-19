@@ -48,7 +48,7 @@ jobs:
             mandatory=true
             versionRange="[1.20.1]"
             ordering="NONE"
-            side="BOTH"
+            side="CLIENT"
         EOF
 
     - name: Compilar com Gradle
