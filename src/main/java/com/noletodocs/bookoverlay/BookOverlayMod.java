@@ -55,7 +55,7 @@ public class BookOverlayMod {
     private int direcaoVirada = 0;
 
     private static final int LARGURA_TEXTO = 88;
-    private static final int MAX_LINHAS_POR_PAGINA = 9; // Reduzido para dar respiro e evitar cortes secos de frases
+    private static final int MAX_LINHAS_POR_PAGINA = 10;
 
     public BookOverlayMod() {
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -85,41 +85,100 @@ public class BookOverlayMod {
             if (file.exists()) {
                 textoCompleto = Files.readString(file.toPath(), StandardCharsets.UTF_8);
             } else {
-                textoCompleto = "Crie o arquivo historia.txt na pasta do modpack!\n\nO texto agora quebra por parágrafos para facilitar a sua narração no canal.";
+                textoCompleto = "Crie o ficheiro historia.txt na pasta do modpack!\n\nAgora nenhuma frase é cortada a meio entre uma página e outra.";
             }
 
             if (textoCompleto.trim().isEmpty()) {
-                textoCompleto = "O arquivo historia.txt está vazio.";
+                textoCompleto = "O ficheiro historia.txt está vazio.";
             }
 
-            // Quebra inteligente por parágrafos para não cortar frases no meio
-            List<FormattedCharSequence> paginaAtualLinhas = new ArrayList<>();
+            List<FormattedCharSequence> linhasFixasNaPagina = new ArrayList<>();
             String[] paragrafos = textoCompleto.replace("\r", "").split("\n");
 
-            for (String p : paragrafos) {
-                if (p.trim().isEmpty()) {
-                    // Parágrafo vazio conta como espaçamento/linha em branco
-                    if (!paginaAtualLinhas.isEmpty()) {
-                        paginaAtualLinhas.add(FormattedCharSequence.EMPTY);
+            for (String paragrafo : paragrafos) {
+                String pLimpo = paragrafo.trim();
+
+                if (pLimpo.isEmpty()) {
+                    // Linha em branco entre parágrafos (só adiciona se a página já tiver texto e espaço)
+                    if (!linhasFixasNaPagina.isEmpty() && linhasFixasNaPagina.size() < MAX_LINHAS_POR_PAGINA - 1) {
+                        linhasFixasNaPagina.add(FormattedCharSequence.EMPTY);
                     }
-                } else {
-                    List<FormattedCharSequence> linhasParagrafo = mc.font.split(Component.literal(p), LARGURA_TEXTO);
-                    for (FormattedCharSequence linha : linhasParagrafo) {
-                        if (paginaAtualLinhas.size() >= MAX_LINHAS_POR_PAGINA) {
-                            paginas.add(new ArrayList<>(paginaAtualLinhas));
-                            paginaAtualLinhas.clear();
+                    continue;
+                }
+
+                // Divide o parágrafo em frases completas (terminadas em ., !, ?, : ou …)
+                String[] frases = pLimpo.split("(?<=[.!?…:])\\s+");
+                StringBuilder paragrafoNaPaginaAtual = new StringBuilder();
+
+                for (String frase : frases) {
+                    String testeParagrafo = paragrafoNaPaginaAtual.length() == 0
+                            ? frase
+                            : paragrafoNaPaginaAtual + " " + frase;
+
+                    List<FormattedCharSequence> linhasTeste = mc.font.split(Component.literal(testeParagrafo), LARGURA_TEXTO);
+
+                    // Verifica se a frase inteira cabe no que resta da página atual
+                    if (linhasFixasNaPagina.size() + linhasTeste.size() <= MAX_LINHAS_POR_PAGINA) {
+                        paragrafoNaPaginaAtual.setLength(0);
+                        paragrafoNaPaginaAtual.append(testeParagrafo);
+                    } else {
+                        // A nova frase não cabe inteira! Fecha a página atual no ponto final anterior:
+                        if (paragrafoNaPaginaAtual.length() > 0) {
+                            linhasFixasNaPagina.addAll(mc.font.split(Component.literal(paragrafoNaPaginaAtual.toString()), LARGURA_TEXTO));
+                            paragrafoNaPaginaAtual.setLength(0);
                         }
-                        paginaAtualLinhas.add(linha);
+                        if (!linhasFixasNaPagina.isEmpty()) {
+                            removerLinhasVaziasDoFim(linhasFixasNaPagina);
+                            if (!linhasFixasNaPagina.isEmpty()) {
+                                paginas.add(new ArrayList<>(linhasFixasNaPagina));
+                            }
+                            linhasFixasNaPagina.clear();
+                        }
+
+                        // Verifica se a frase sozinha é maior do que uma página inteira (> 10 linhas)
+                        List<FormattedCharSequence> linhasFraseSozinha = mc.font.split(Component.literal(frase), LARGURA_TEXTO);
+                        if (linhasFraseSozinha.size() <= MAX_LINHAS_POR_PAGINA) {
+                            paragrafoNaPaginaAtual.append(frase);
+                        } else {
+                            // Caso raro de frase gigante sem ponto final: divide por vírgulas para não cortar palavras a meio
+                            String[] pausas = frase.split("(?<=[,;—-])\\s+");
+                            for (String pausa : pausas) {
+                                String testePausa = paragrafoNaPaginaAtual.length() == 0
+                                        ? pausa
+                                        : paragrafoNaPaginaAtual + " " + pausa;
+                                List<FormattedCharSequence> linhasPausa = mc.font.split(Component.literal(testePausa), LARGURA_TEXTO);
+                                if (linhasPausa.size() <= MAX_LINHAS_POR_PAGINA) {
+                                    paragrafoNaPaginaAtual.setLength(0);
+                                    paragrafoNaPaginaAtual.append(testePausa);
+                                } else {
+                                    if (paragrafoNaPaginaAtual.length() > 0) {
+                                        paginas.add(new ArrayList<>(mc.font.split(Component.literal(paragrafoNaPaginaAtual.toString()), LARGURA_TEXTO)));
+                                        paragrafoNaPaginaAtual.setLength(0);
+                                    }
+                                    paragrafoNaPaginaAtual.append(pausa);
+                                }
+                            }
+                        }
                     }
-                    // Adiciona uma linha em branco sutil ao fim de cada parágrafo para separar as ideias
-                    if (!paginaAtualLinhas.isEmpty() && paginaAtualLinhas.size() < MAX_LINHAS_POR_PAGINA) {
-                        paginaAtualLinhas.add(FormattedCharSequence.EMPTY);
-                    }
+                }
+
+                // Ao terminar o parágrafo, fixa as linhas dele na página atual
+                if (paragrafoNaPaginaAtual.length() > 0) {
+                    linhasFixasNaPagina.addAll(mc.font.split(Component.literal(paragrafoNaPaginaAtual.toString()), LARGURA_TEXTO));
+                }
+
+                if (linhasFixasNaPagina.size() >= MAX_LINHAS_POR_PAGINA) {
+                    removerLinhasVaziasDoFim(linhasFixasNaPagina);
+                    paginas.add(new ArrayList<>(linhasFixasNaPagina));
+                    linhasFixasNaPagina.clear();
                 }
             }
 
-            if (!paginaAtualLinhas.isEmpty()) {
-                paginas.add(new ArrayList<>(paginaAtualLinhas));
+            if (!linhasFixasNaPagina.isEmpty()) {
+                removerLinhasVaziasDoFim(linhasFixasNaPagina);
+                if (!linhasFixasNaPagina.isEmpty()) {
+                    paginas.add(new ArrayList<>(linhasFixasNaPagina));
+                }
             }
 
             if (paginas.isEmpty()) {
@@ -128,6 +187,12 @@ public class BookOverlayMod {
             historiaCarregada = true;
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void removerLinhasVaziasDoFim(List<FormattedCharSequence> linhas) {
+        while (!linhas.isEmpty() && linhas.get(linhas.size() - 1) == FormattedCharSequence.EMPTY) {
+            linhas.remove(linhas.size() - 1);
         }
     }
 
