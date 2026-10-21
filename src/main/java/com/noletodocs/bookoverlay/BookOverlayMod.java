@@ -50,12 +50,12 @@ public class BookOverlayMod {
     private boolean livroAtivo = true;
     private boolean historiaCarregada = false;
 
-    // Animação limpa de virar a folha 3D (de 0.0 a 1.0)
     private float animProgresso = 0.0F;
     private float animProgressoAnt = 0.0F;
-    private int direcaoVirada = 0; // 1 = avançando (dir -> esq), -1 = voltando (esq -> dir)
+    private int direcaoVirada = 0;
 
     private static final int LARGURA_TEXTO = 88;
+    private static final int MAX_LINHAS_POR_PAGINA = 9; // Reduzido para dar respiro e evitar cortes secos de frases
 
     public BookOverlayMod() {
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -85,26 +85,41 @@ public class BookOverlayMod {
             if (file.exists()) {
                 textoCompleto = Files.readString(file.toPath(), StandardCharsets.UTF_8);
             } else {
-                textoCompleto = "Crie o arquivo historia.txt na pasta do modpack!\n\nUse as SETAS ou os BOTOES LATERAIS DO MOUSE para virar as páginas.";
+                textoCompleto = "Crie o arquivo historia.txt na pasta do modpack!\n\nO texto agora quebra por parágrafos para facilitar a sua narração no canal.";
             }
 
             if (textoCompleto.trim().isEmpty()) {
                 textoCompleto = "O arquivo historia.txt está vazio.";
             }
 
-            List<FormattedCharSequence> todasLinhas = new ArrayList<>();
+            // Quebra inteligente por parágrafos para não cortar frases no meio
+            List<FormattedCharSequence> paginaAtualLinhas = new ArrayList<>();
             String[] paragrafos = textoCompleto.replace("\r", "").split("\n");
+
             for (String p : paragrafos) {
                 if (p.trim().isEmpty()) {
-                    todasLinhas.add(FormattedCharSequence.EMPTY);
+                    // Parágrafo vazio conta como espaçamento/linha em branco
+                    if (!paginaAtualLinhas.isEmpty()) {
+                        paginaAtualLinhas.add(FormattedCharSequence.EMPTY);
+                    }
                 } else {
-                    todasLinhas.addAll(mc.font.split(Component.literal(p), LARGURA_TEXTO));
+                    List<FormattedCharSequence> linhasParagrafo = mc.font.split(Component.literal(p), LARGURA_TEXTO);
+                    for (FormattedCharSequence linha : linhasParagrafo) {
+                        if (paginaAtualLinhas.size() >= MAX_LINHAS_POR_PAGINA) {
+                            paginas.add(new ArrayList<>(paginaAtualLinhas));
+                            paginaAtualLinhas.clear();
+                        }
+                        paginaAtualLinhas.add(linha);
+                    }
+                    // Adiciona uma linha em branco sutil ao fim de cada parágrafo para separar as ideias
+                    if (!paginaAtualLinhas.isEmpty() && paginaAtualLinhas.size() < MAX_LINHAS_POR_PAGINA) {
+                        paginaAtualLinhas.add(FormattedCharSequence.EMPTY);
+                    }
                 }
             }
 
-            int linhasPorPagina = 10;
-            for (int i = 0; i < todasLinhas.size(); i += linhasPorPagina) {
-                paginas.add(new ArrayList<>(todasLinhas.subList(i, Math.min(i + linhasPorPagina, todasLinhas.size()))));
+            if (!paginaAtualLinhas.isEmpty()) {
+                paginas.add(new ArrayList<>(paginaAtualLinhas));
             }
 
             if (paginas.isEmpty()) {
@@ -223,7 +238,6 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        // Estabilizador 100% na 1.19.2: Reseta a matriz para ignorar o balanço de caminhada (View Bobbing)
         poseStack.last().pose().setIdentity();
         poseStack.last().normal().setIdentity();
 
@@ -238,16 +252,14 @@ public class BookOverlayMod {
         poseStack.mulPose(Vector3f.XP.rotationDegrees(-14.0F));
         poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * 8.0F));
 
-        // 1) Desenha a Mão/Braço 3D segurando o livro por trás/baixo da capa
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
 
-        // 2) Desenha o Livro 3D (Capa original + Páginas Lisas #d5cba6 + Texto)
         Font font = mc.font;
         int pagEsqIndex = spreadAtual * 2;
         int pagDirIndex = spreadAtual * 2 + 1;
         ResourceLocation pageTex = getSolidPageTexture();
 
-        // --- LADO ESQUERDO DO LIVRO ---
+        // --- LADO ESQUERDO ---
         poseStack.pushPose();
         poseStack.mulPose(Vector3f.YP.rotationDegrees(13.0F));
 
@@ -268,7 +280,7 @@ public class BookOverlayMod {
         }
         poseStack.popPose();
 
-        // --- LADO DIREITO DO LIVRO ---
+        // --- LADO DIREITO ---
         poseStack.pushPose();
         poseStack.mulPose(Vector3f.YP.rotationDegrees(-13.0F));
 
@@ -289,7 +301,7 @@ public class BookOverlayMod {
         }
         poseStack.popPose();
 
-        // --- FOLHA ANIMADA VIRANDO ---
+        // --- FOLHA VIRANDO ---
         if (direcaoVirada != 0) {
             float prog = Mth.lerp(partialTick, animProgressoAnt, animProgresso);
             float anguloFolha = (direcaoVirada == 1)
