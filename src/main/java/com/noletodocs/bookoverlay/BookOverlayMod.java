@@ -8,6 +8,8 @@ import com.mojang.math.Matrix4f;
 import com.mojang.math.Vector3f;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -21,11 +23,13 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
+import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -99,14 +103,12 @@ public class BookOverlayMod {
                 String pLimpo = paragrafo.trim();
 
                 if (pLimpo.isEmpty()) {
-                    // Linha em branco entre parágrafos (só adiciona se a página já tiver texto e espaço)
                     if (!linhasFixasNaPagina.isEmpty() && linhasFixasNaPagina.size() < MAX_LINHAS_POR_PAGINA - 1) {
                         linhasFixasNaPagina.add(FormattedCharSequence.EMPTY);
                     }
                     continue;
                 }
 
-                // Divide o parágrafo em frases completas (terminadas em ., !, ?, : ou …)
                 String[] frases = pLimpo.split("(?<=[.!?…:])\\s+");
                 StringBuilder paragrafoNaPaginaAtual = new StringBuilder();
 
@@ -117,12 +119,10 @@ public class BookOverlayMod {
 
                     List<FormattedCharSequence> linhasTeste = mc.font.split(Component.literal(testeParagrafo), LARGURA_TEXTO);
 
-                    // Verifica se a frase inteira cabe no que resta da página atual
                     if (linhasFixasNaPagina.size() + linhasTeste.size() <= MAX_LINHAS_POR_PAGINA) {
                         paragrafoNaPaginaAtual.setLength(0);
                         paragrafoNaPaginaAtual.append(testeParagrafo);
                     } else {
-                        // A nova frase não cabe inteira! Fecha a página atual no ponto final anterior:
                         if (paragrafoNaPaginaAtual.length() > 0) {
                             linhasFixasNaPagina.addAll(mc.font.split(Component.literal(paragrafoNaPaginaAtual.toString()), LARGURA_TEXTO));
                             paragrafoNaPaginaAtual.setLength(0);
@@ -135,12 +135,10 @@ public class BookOverlayMod {
                             linhasFixasNaPagina.clear();
                         }
 
-                        // Verifica se a frase sozinha é maior do que uma página inteira (> 10 linhas)
                         List<FormattedCharSequence> linhasFraseSozinha = mc.font.split(Component.literal(frase), LARGURA_TEXTO);
                         if (linhasFraseSozinha.size() <= MAX_LINHAS_POR_PAGINA) {
                             paragrafoNaPaginaAtual.append(frase);
                         } else {
-                            // Caso raro de frase gigante sem ponto final: divide por vírgulas para não cortar palavras a meio
                             String[] pausas = frase.split("(?<=[,;—-])\\s+");
                             for (String pausa : pausas) {
                                 String testePausa = paragrafoNaPaginaAtual.length() == 0
@@ -162,7 +160,6 @@ public class BookOverlayMod {
                     }
                 }
 
-                // Ao terminar o parágrafo, fixa as linhas dele na página atual
                 if (paragrafoNaPaginaAtual.length() > 0) {
                     linhasFixasNaPagina.addAll(mc.font.split(Component.literal(paragrafoNaPaginaAtual.toString()), LARGURA_TEXTO));
                 }
@@ -278,6 +275,23 @@ public class BookOverlayMod {
         return stack.is(Items.BOOK) || stack.is(Items.WRITABLE_BOOK) || stack.is(Items.WRITTEN_BOOK) || stack.is(Items.ENCHANTED_BOOK);
     }
 
+    // Descobre em qual braço (Direito ou Esquerdo) o livro está sendo segurado
+    private HumanoidArm obterBracoDoLivro(Player player) {
+        boolean mainHasBook = isBookItem(player.getMainHandItem());
+        boolean offHasBook = isBookItem(player.getOffhandItem());
+
+        InteractionHand hand;
+        if (mainHasBook || offHasBook) {
+            hand = mainHasBook ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
+        } else {
+            hand = InteractionHand.OFF_HAND;
+        }
+
+        HumanoidArm mainArm = Minecraft.getInstance().options.mainHand().get();
+        return (hand == InteractionHand.MAIN_HAND) ? mainArm : mainArm.getOpposite();
+    }
+
+    // --- 1ª PESSOA ---
     @SubscribeEvent
     public void onRenderHand(RenderHandEvent event) {
         if (!livroAtivo) return;
@@ -318,8 +332,75 @@ public class BookOverlayMod {
         poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * 8.0F));
 
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
+        desenharModeloCompletoDoLivro(poseStack, buffer, light, partialTick);
 
-        Font font = mc.font;
+        buffer.endBatch();
+        poseStack.popPose();
+    }
+
+    // --- 2ª e 3ª PESSOA (F5): Levanta o braço do personagem em postura de leitura ---
+    @SubscribeEvent
+    public void onRenderPlayerPre(RenderPlayerEvent.Pre event) {
+        if (!livroAtivo) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || event.getEntity() != mc.player) return;
+
+        HumanoidArm bookArm = obterBracoDoLivro(mc.player);
+        PlayerModel<AbstractClientPlayer> model = event.getRenderer().getModel();
+
+        if (bookArm == HumanoidArm.RIGHT) {
+            model.rightArmPose = HumanoidModel.ArmPose.BLOCK;
+        } else {
+            model.leftArmPose = HumanoidModel.ArmPose.BLOCK;
+        }
+    }
+
+    // --- 2ª e 3ª PESSOA (F5): Desenha o Livro 3D aberto na mão do personagem ---
+    @SubscribeEvent
+    public void onRenderPlayerPost(RenderPlayerEvent.Post event) {
+        if (!livroAtivo) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || event.getEntity() != mc.player) return;
+
+        Player player = event.getEntity();
+        HumanoidArm bookArm = obterBracoDoLivro(player);
+        PlayerModel<AbstractClientPlayer> model = event.getRenderer().getModel();
+
+        PoseStack poseStack = event.getPoseStack();
+        MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
+        int light = LightTexture.FULL_BRIGHT;
+        float partialTick = event.getPartialTick();
+
+        poseStack.pushPose();
+
+        // Alinha com a rotação e escala do corpo do jogador em 3ª pessoa
+        float bodyYaw = Mth.rotLerp(partialTick, player.yBodyRotO, player.yBodyRot);
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(180.0F - bodyYaw));
+        poseStack.scale(-1.0F, -1.0F, 1.0F);
+        poseStack.scale(0.9375F, 0.9375F, 0.9375F);
+        poseStack.translate(0.0D, -1.501D, 0.0D);
+
+        // Move a matriz exatamente para o braço/mão que está levantado segurando o livro
+        model.translateToHand(bookArm, poseStack);
+
+        float side = (bookArm == HumanoidArm.RIGHT) ? 1.0F : -1.0F;
+        poseStack.translate(-side * 0.0625F, 0.56F, -0.14F);
+
+        // Orienta o livro aberto virado para o rosto do boneco
+        poseStack.scale(-1.0F, -1.0F, 1.0F);
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(side * -22.0F));
+        poseStack.mulPose(Vector3f.XP.rotationDegrees(72.0F));
+        poseStack.scale(0.75F, 0.75F, 0.75F);
+
+        desenharModeloCompletoDoLivro(poseStack, buffer, light, partialTick);
+
+        buffer.endBatch();
+        poseStack.popPose();
+    }
+
+    // Método compartilhado que desenha o Livro 3D, Páginas, Texto e Animação (usado em 1ª, 2ª e 3ª pessoa)
+    private void desenharModeloCompletoDoLivro(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light, float partialTick) {
+        Font font = Minecraft.getInstance().font;
         int pagEsqIndex = spreadAtual * 2;
         int pagDirIndex = spreadAtual * 2 + 1;
         ResourceLocation pageTex = getSolidPageTexture();
@@ -381,9 +462,6 @@ public class BookOverlayMod {
             buffer.endBatch(RenderType.entitySolid(pageTex));
             poseStack.popPose();
         }
-
-        buffer.endBatch();
-        poseStack.popPose();
     }
 
     private void renderizarBracoSegurandoLivro(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light, AbstractClientPlayer player, float side) {
