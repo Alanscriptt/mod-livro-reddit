@@ -275,7 +275,6 @@ public class BookOverlayMod {
         return stack.is(Items.BOOK) || stack.is(Items.WRITABLE_BOOK) || stack.is(Items.WRITTEN_BOOK) || stack.is(Items.ENCHANTED_BOOK);
     }
 
-    // Descobre em qual braço (Direito ou Esquerdo) o livro está sendo segurado
     private HumanoidArm obterBracoDoLivro(Player player) {
         boolean mainHasBook = isBookItem(player.getMainHandItem());
         boolean offHasBook = isBookItem(player.getOffhandItem());
@@ -355,7 +354,7 @@ public class BookOverlayMod {
         }
     }
 
-    // --- 2ª e 3ª PESSOA (F5): Desenha o Livro 3D aberto na mão do personagem ---
+    // --- 2ª e 3ª PESSOA (F5): Desenha o Livro 3D com as páginas viradas PARA O ROSTO DO BONECO ---
     @SubscribeEvent
     public void onRenderPlayerPost(RenderPlayerEvent.Post event) {
         if (!livroAtivo) return;
@@ -380,16 +379,20 @@ public class BookOverlayMod {
         poseStack.scale(0.9375F, 0.9375F, 0.9375F);
         poseStack.translate(0.0D, -1.501D, 0.0D);
 
-        // Move a matriz exatamente para o braço/mão que está levantado segurando o livro
+        // Move para a mão que segura o livro
         model.translateToHand(bookArm, poseStack);
 
         float side = (bookArm == HumanoidArm.RIGHT) ? 1.0F : -1.0F;
         poseStack.translate(-side * 0.0625F, 0.56F, -0.14F);
 
-        // Orienta o livro aberto virado para o rosto do boneco
         poseStack.scale(-1.0F, -1.0F, 1.0F);
         poseStack.mulPose(Vector3f.YP.rotationDegrees(side * -22.0F));
         poseStack.mulPose(Vector3f.XP.rotationDegrees(72.0F));
+
+        // GIRO DE 180 GRAUS: Vira as páginas abertas (com texto) para o rosto do boneco
+        // e deixa a capa marrom/dourada virada para fora!
+        poseStack.mulPose(Vector3f.YP.rotationDegrees(180.0F));
+
         poseStack.scale(0.75F, 0.75F, 0.75F);
 
         desenharModeloCompletoDoLivro(poseStack, buffer, light, partialTick);
@@ -398,7 +401,6 @@ public class BookOverlayMod {
         poseStack.popPose();
     }
 
-    // Método compartilhado que desenha o Livro 3D, Páginas, Texto e Animação (usado em 1ª, 2ª e 3ª pessoa)
     private void desenharModeloCompletoDoLivro(PoseStack poseStack, MultiBufferSource.BufferSource buffer, int light, float partialTick) {
         Font font = Minecraft.getInstance().font;
         int pagEsqIndex = spreadAtual * 2;
@@ -442,7 +444,7 @@ public class BookOverlayMod {
             poseStack.pushPose();
             poseStack.translate(0.121F, 0.0F, 0.0195F);
             poseStack.scale(0.00215F, -0.00215F, 0.00215F);
-            desenharLinhasComDestaque(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagDirIndex + 1);
+            desenharLinhasComDestaque(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
             poseStack.popPose();
         }
         poseStack.popPose();
