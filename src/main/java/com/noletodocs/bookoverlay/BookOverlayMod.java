@@ -3,9 +3,7 @@ package com.noletodocs.bookoverlay;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Matrix3f;
-import com.mojang.math.Matrix4f;
-import com.mojang.math.Vector3f;
+import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.HumanoidModel;
@@ -35,6 +33,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLEnvironment;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -316,8 +316,9 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        poseStack.last().pose().setIdentity();
-        poseStack.last().normal().setIdentity();
+        // Na 1.20.1 usa-se .identity() para estabilizar 100% o livro
+        poseStack.last().pose().identity();
+        poseStack.last().normal().identity();
 
         boolean isRightHand = (event.getHand() == InteractionHand.MAIN_HAND)
                 ? (mc.options.mainHand().get() == HumanoidArm.RIGHT)
@@ -326,9 +327,9 @@ public class BookOverlayMod {
 
         poseStack.translate(side * 0.31F, -0.14F, -0.58F);
 
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(side * -18.0F));
-        poseStack.mulPose(Vector3f.XP.rotationDegrees(-14.0F));
-        poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * 8.0F));
+        poseStack.mulPose(Axis.YP.rotationDegrees(side * -18.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(-14.0F));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(side * 8.0F));
 
         renderizarBracoSegurandoLivro(poseStack, buffer, light, mc.player, side);
         desenharModeloCompletoDoLivro(poseStack, buffer, light, partialTick);
@@ -354,7 +355,7 @@ public class BookOverlayMod {
         }
     }
 
-    // --- 2ª e 3ª PESSOA (F5): Desenha o Livro 3D com as páginas viradas PARA O ROSTO DO BONECO ---
+    // --- 2ª e 3ª PESSOA (F5): Desenha o Livro 3D com as páginas viradas para o rosto do boneco ---
     @SubscribeEvent
     public void onRenderPlayerPost(RenderPlayerEvent.Post event) {
         if (!livroAtivo) return;
@@ -372,27 +373,21 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        // Alinha com a rotação e escala do corpo do jogador em 3ª pessoa
         float bodyYaw = Mth.rotLerp(partialTick, player.yBodyRotO, player.yBodyRot);
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(180.0F - bodyYaw));
+        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F - bodyYaw));
         poseStack.scale(-1.0F, -1.0F, 1.0F);
         poseStack.scale(0.9375F, 0.9375F, 0.9375F);
         poseStack.translate(0.0D, -1.501D, 0.0D);
 
-        // Move para a mão que segura o livro
         model.translateToHand(bookArm, poseStack);
 
         float side = (bookArm == HumanoidArm.RIGHT) ? 1.0F : -1.0F;
         poseStack.translate(-side * 0.0625F, 0.56F, -0.14F);
 
         poseStack.scale(-1.0F, -1.0F, 1.0F);
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(side * -22.0F));
-        poseStack.mulPose(Vector3f.XP.rotationDegrees(72.0F));
-
-        // GIRO DE 180 GRAUS: Vira as páginas abertas (com texto) para o rosto do boneco
-        // e deixa a capa marrom/dourada virada para fora!
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(180.0F));
-
+        poseStack.mulPose(Axis.YP.rotationDegrees(side * -22.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(72.0F));
+        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
         poseStack.scale(0.75F, 0.75F, 0.75F);
 
         desenharModeloCompletoDoLivro(poseStack, buffer, light, partialTick);
@@ -409,7 +404,7 @@ public class BookOverlayMod {
 
         // --- LADO ESQUERDO ---
         poseStack.pushPose();
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(13.0F));
+        poseStack.mulPose(Axis.YP.rotationDegrees(13.0F));
 
         VertexConsumer bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         desenharCaixa3D(poseStack, bookConsumer, -0.255F, -0.185F, -0.022F, 0.0F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
@@ -430,7 +425,7 @@ public class BookOverlayMod {
 
         // --- LADO DIREITO ---
         poseStack.pushPose();
-        poseStack.mulPose(Vector3f.YP.rotationDegrees(-13.0F));
+        poseStack.mulPose(Axis.YP.rotationDegrees(-13.0F));
 
         bookConsumer = buffer.getBuffer(RenderType.entitySolid(BOOK_TEXTURE));
         desenharCaixa3D(poseStack, bookConsumer, 0.0F, -0.185F, -0.022F, 0.255F, 0.185F, -0.008F, 0, 0, 16, 20, 64, 32, 255, 255, 255, light);
@@ -444,7 +439,7 @@ public class BookOverlayMod {
             poseStack.pushPose();
             poseStack.translate(0.121F, 0.0F, 0.0195F);
             poseStack.scale(0.00215F, -0.00215F, 0.00215F);
-            desenharLinhasComDestaque(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagEsqIndex + 1);
+            desenharLinhasComDestaque(font, paginas.get(pagDirIndex), poseStack.last().pose(), buffer, light, pagDirIndex + 1);
             poseStack.popPose();
         }
         poseStack.popPose();
@@ -458,7 +453,7 @@ public class BookOverlayMod {
 
             poseStack.pushPose();
             poseStack.translate(0.0F, 0.0F, 0.020F);
-            poseStack.mulPose(Vector3f.YP.rotationDegrees(anguloFolha));
+            poseStack.mulPose(Axis.YP.rotationDegrees(anguloFolha));
             pageConsumer = buffer.getBuffer(RenderType.entitySolid(pageTex));
             desenharPaginaLisa3D(poseStack, pageConsumer, 0.002F, -0.166F, -0.002F, 0.234F, 0.166F, 0.002F, 213, 203, 166, light);
             buffer.endBatch(RenderType.entitySolid(pageTex));
@@ -472,8 +467,8 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
         poseStack.translate(side * -0.03F, -0.24F, -0.045F);
-        poseStack.mulPose(Vector3f.ZP.rotationDegrees(side * -14.0F));
-        poseStack.mulPose(Vector3f.XP.rotationDegrees(16.0F));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(side * -14.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(16.0F));
 
         desenharCaixa3D(poseStack, skinConsumer, -0.052F, -0.28F, -0.052F, 0.052F, 0.05F, 0.052F, 44, 20, 48, 32, 64, 64, 255, 255, 255, light);
         desenharCaixa3D(poseStack, skinConsumer, -0.056F, -0.28F, -0.056F, 0.056F, 0.055F, 0.056F, 44, 36, 48, 48, 64, 64, 255, 255, 255, light);
@@ -489,14 +484,14 @@ public class BookOverlayMod {
 
         float y = inicioY;
         for (FormattedCharSequence linha : linhas) {
-            font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, false, 0, light);
-            font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, false, 0, light);
+            font.drawInBatch(linha, margemX + 0.35F, y, 0x1A110B, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
+            font.drawInBatch(linha, margemX, y, 0x000000, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
             y += espacoLinha;
         }
 
         String rodape = "- " + numPagina + " -";
         float rodapeX = -font.width(rodape) / 2.0F;
-        font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, false, 0, light);
+        font.drawInBatch(rodape, rodapeX, 55.0F, 0x2B1E14, false, matrix, buffer, Font.DisplayMode.NORMAL, 0, light);
     }
 
     private void desenharPaginaLisa3D(PoseStack poseStack, VertexConsumer consumer,
