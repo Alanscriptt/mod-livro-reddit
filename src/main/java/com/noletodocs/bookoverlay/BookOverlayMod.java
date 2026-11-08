@@ -316,7 +316,6 @@ public class BookOverlayMod {
 
         poseStack.pushPose();
 
-        // Na 1.20.1 usa-se .identity() para estabilizar 100% o livro
         poseStack.last().pose().identity();
         poseStack.last().normal().identity();
 
